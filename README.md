@@ -3,19 +3,24 @@
 [![test](https://github.com/tmchow/gh-smart-clone/actions/workflows/test.yml/badge.svg)](https://github.com/tmchow/gh-smart-clone/actions/workflows/test.yml)
 
 `gh-smart-clone` is a GitHub CLI extension that clones repositories into a
-predictable `owner/repo` directory layout, with special handling for contribution
-forks.
+predictable `owner/repo` directory layout, with explicit modes for first-party
+work, external OSS inspection, and OSS contribution forks.
 
 ```text
 tmchow/foo                         -> ~/Code/tmchow/foo
 EveryInc/compound-engineering-plugin -> ~/Code/EveryInc/compound-engineering-plugin
 tmchow/orca, fork of stablyai/orca -> ~/Code/stablyai/orca
 tmchow/orca with --oss             -> ~/Code/oss/stablyai/orca
+--contribute anthropics/claude-code -> ~/Code/oss/anthropics/claude-code
 ```
 
 For forks, the clone source stays as the repository you requested. That means
 your fork remains `origin`, while `gh repo clone` can still configure the parent
 repository as `upstream`.
+
+Contribution mode is different: `--contribute OWNER/REPO` treats `OWNER/REPO`
+as the upstream project, creates or reuses your fork explicitly, clones the fork
+as `origin`, and configures `upstream` to the original repository.
 
 ## Installation
 
@@ -100,6 +105,67 @@ GH_SMART_CLONE_OSS_PREFIX=~/src/external gh smart-clone --oss anthropics/claude-
 
 `--oss-prefix` implies `--oss`. `--external` is an alias for `--oss`.
 
+### Contribution Forks
+
+Use `--contribute` when you intend to make changes through a fork:
+
+```sh
+gh smart-clone --contribute anthropics/claude-code
+# -> ~/Code/oss/anthropics/claude-code
+```
+
+This mode may create external GitHub state. Normal clone mode and `--oss` never
+create forks.
+
+Contribution mode:
+
+- resolves the input as the upstream project
+- determines the fork owner
+- creates or reuses the fork
+- clones `<forkOwner>/<repo>` into the upstream OSS path
+- sets `origin` to the fork
+- sets `upstream` to the original project
+- optionally sets local `user.name` and `user.email`
+- optionally rewrites `origin` to an SSH alias URL
+
+Configure contribution defaults with git config:
+
+```sh
+git config --global smart-clone.forkOwner OWNER_OR_ORG
+git config --global smart-clone.gitName "Example Name"
+git config --global smart-clone.gitEmail person@example.com
+git config --global smart-clone.sshAlias github.com-work
+```
+
+Use a one-off fork owner:
+
+```sh
+gh smart-clone --contribute --fork-owner OWNER_OR_ORG anthropics/claude-code
+```
+
+If the fork owner differs from the authenticated `gh` user, `gh-smart-clone`
+treats it as an organization fork target and passes `--org OWNER_OR_ORG` to
+`gh repo fork`.
+
+Require the fork to already exist:
+
+```sh
+gh smart-clone --contribute --no-fork anthropics/claude-code
+```
+
+If a contribution checkout already exists, reconfigure it intentionally:
+
+```sh
+gh smart-clone --contribute --reconfigure anthropics/claude-code
+```
+
+`--print-path` and `--dry-run` do not create forks:
+
+```sh
+gh smart-clone --contribute --print-path anthropics/claude-code
+gh smart-clone --contribute --dry-run anthropics/claude-code
+```
+
 Preview the path without cloning:
 
 ```sh
@@ -152,6 +218,14 @@ origin -> github.com/tmchow/orca
     --oss-prefix <path>         OSS clone root. Implies --oss. Defaults to
                                 GH_SMART_CLONE_OSS_PREFIX, then git config
                                 smart-clone.ossPrefix, then <prefix>/oss.
+    --contribute                Create/reuse a fork, clone the fork, and place
+                                the checkout under the upstream OSS path.
+    --fork-owner <owner>        Account or org that should own contribution
+                                forks. Defaults to smart-clone.forkOwner,
+                                then the authenticated gh user.
+    --no-fork                   Do not create a fork. Require it to exist.
+    --reconfigure               Reconfigure an existing contribution checkout
+                                instead of cloning.
     --fork-placement <policy>   Where forks are placed: upstream or fork.
                                 Defaults to upstream.
     --dry-run                   Print what would happen without cloning.
@@ -178,6 +252,10 @@ shellcheck gh-smart-clone test/run-tests.bash
 
 The tests use a fake `gh` binary, so they do not clone repositories or require
 network access.
+
+This repository also publishes an agent skill at
+`skills/gh-smart-clone/SKILL.md` for agents that need scenario guidance on when
+to use normal, OSS, and contribution modes.
 
 ## Prior Art
 

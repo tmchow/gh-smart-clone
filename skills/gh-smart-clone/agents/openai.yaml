@@ -1,0 +1,4 @@
+interface:
+  display_name: "gh-smart-clone"
+  short_description: "Clone and fork GitHub repos safely."
+  default_prompt: "Use gh-smart-clone to choose the right GitHub checkout mode, then verify paths, remotes, fork ownership, and local git identity before editing or pushing."

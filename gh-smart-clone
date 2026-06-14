@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-VERSION="0.2.0"
+VERSION="0.3.0"
 
 usage() {
   cat <<'HELP_TEXT'
@@ -15,6 +15,8 @@ EXAMPLES
   gh smart-clone EveryInc/compound-engineering-plugin
   gh smart-clone tmchow/orca
   gh smart-clone --oss tmchow/orca
+  gh smart-clone --contribute stablyai/orca
+  gh smart-clone --contribute --reconfigure stablyai/orca
   gh smart-clone --oss-prefix ~/src/external anthropics/claude-code
   gh smart-clone --prefix ~/Developer tmchow/orca
   gh smart-clone --fork-placement fork tmchow/orca
@@ -28,6 +30,14 @@ FLAGS
       --oss-prefix <path>         OSS clone root. Implies --oss. Defaults to
                                   GH_SMART_CLONE_OSS_PREFIX, then git config
                                   smart-clone.ossPrefix, then <prefix>/oss.
+      --contribute                Create/reuse a fork, clone the fork, and place
+                                  the checkout under the upstream OSS path.
+      --fork-owner <owner>        Account or org that should own contribution
+                                  forks. Defaults to smart-clone.forkOwner,
+                                  then the authenticated gh user.
+      --no-fork                   Do not create a fork. Require it to exist.
+      --reconfigure               Reconfigure an existing contribution checkout
+                                  instead of cloning.
       --fork-placement <policy>   Where forks are placed: upstream or fork.
                                   Defaults to upstream.
       --dry-run                   Print what would happen without cloning.
@@ -45,6 +55,9 @@ NOTES
     upstream -> the original repository
 
   while placing the checkout under the project identity you actually navigate by.
+
+  --contribute is intentionally explicit because fork creation mutates GitHub
+  state. Normal clone mode and --oss never create forks.
 HELP_TEXT
 }
 
@@ -95,9 +108,159 @@ default_oss_prefix() {
   printf '%s/oss\n' "$normal_prefix"
 }
 
+git_config_get() {
+  git config --get "$1" 2>/dev/null || true
+}
+
+repo_info() {
+  local repo="$1"
+  local template
+  template='{{.nameWithOwner}}{{"\t"}}{{.isFork}}{{"\t"}}{{if .parent}}{{.parent.owner.login}}/{{.parent.name}}{{end}}{{"\n"}}'
+  gh repo view "$repo" --json nameWithOwner,isFork,parent --template "$template"
+}
+
+remote_set() {
+  local dest="$1"
+  local name="$2"
+  local url="$3"
+
+  if git -C "$dest" remote get-url "$name" >/dev/null 2>&1; then
+    git -C "$dest" remote set-url "$name" "$url"
+  else
+    git -C "$dest" remote add "$name" "$url"
+  fi
+}
+
+ensure_git_repo() {
+  local dest="$1"
+  if ! git -C "$dest" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+    die "destination exists but is not a git repository: $dest"
+  fi
+}
+
+configure_contribution_checkout() {
+  local dest="$1"
+  local fork_repo="$2"
+  local upstream_repo="$3"
+  local origin_url="$4"
+  local git_name="$5"
+  local git_email="$6"
+
+  ensure_git_repo "$dest"
+  remote_set "$dest" origin "$origin_url"
+  remote_set "$dest" upstream "https://github.com/$upstream_repo.git"
+
+  if [[ -n "$git_name" ]]; then
+    git -C "$dest" config user.name "$git_name"
+  fi
+  if [[ -n "$git_email" ]]; then
+    git -C "$dest" config user.email "$git_email"
+  fi
+}
+
+existing_checkout_error() {
+  local dest="$1"
+  if git -C "$dest" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+    printf 'gh-smart-clone: destination already exists: %s\n' "$dest" >&2
+    printf 'gh-smart-clone: current remotes:\n' >&2
+    git -C "$dest" remote -v >&2 || true
+    die "use --contribute --reconfigure to update remotes/identity intentionally"
+  fi
+  die "destination already exists and is not a git repository: $dest"
+}
+
+resolve_fork_owner() {
+  local explicit="$1"
+  local configured
+
+  if [[ -n "$explicit" ]]; then
+    printf '%s\n' "$explicit"
+    return
+  fi
+
+  configured="$(git_config_get smart-clone.forkOwner)"
+  if [[ -n "$configured" ]]; then
+    printf '%s\n' "$configured"
+    return
+  fi
+
+  gh api user --jq .login
+}
+
+fork_info_or_empty() {
+  local fork_repo="$1"
+  repo_info "$fork_repo" 2>/dev/null || true
+}
+
+validate_existing_fork() {
+  local fork_repo="$1"
+  local upstream_repo="$2"
+  local info="$3"
+  local resolved_repo is_fork parent_repo
+
+  IFS=$'\t' read -r resolved_repo is_fork parent_repo <<<"$info"
+  if [[ -z "$resolved_repo" ]]; then
+    return 1
+  fi
+  if [[ "$is_fork" != "true" ]]; then
+    die "$fork_repo exists but is not a fork"
+  fi
+  if [[ "$parent_repo" != "$upstream_repo" ]]; then
+    die "$fork_repo is a fork of $parent_repo, not $upstream_repo"
+  fi
+  return 0
+}
+
+wait_for_fork() {
+  local fork_repo="$1"
+  local upstream_repo="$2"
+  local info
+
+  for _ in 1 2 3 4 5; do
+    info="$(fork_info_or_empty "$fork_repo")"
+    if validate_existing_fork "$fork_repo" "$upstream_repo" "$info"; then
+      return 0
+    fi
+    sleep 1
+  done
+
+  die "fork was requested but $fork_repo was not available yet"
+}
+
+ensure_fork() {
+  local upstream_repo="$1"
+  local fork_owner="$2"
+  local fork_repo="$3"
+  local auth_login="$4"
+  local no_fork="$5"
+  local info fork_cmd
+
+  info="$(fork_info_or_empty "$fork_repo")"
+  if validate_existing_fork "$fork_repo" "$upstream_repo" "$info"; then
+    printf 'Using existing fork %s\n' "$fork_repo"
+    return
+  fi
+
+  if [[ "$no_fork" == true ]]; then
+    die "required fork does not exist: $fork_repo"
+  fi
+
+  fork_cmd=(gh repo fork "$upstream_repo" --default-branch-only --clone=false)
+  if [[ "$fork_owner" != "$auth_login" ]]; then
+    fork_cmd+=(--org "$fork_owner")
+  fi
+
+  "${fork_cmd[@]}"
+  wait_for_fork "$fork_repo" "$upstream_repo"
+}
+
 prefix=""
 oss_prefix=""
 oss_mode=false
+contribute=false
+fork_owner=""
+no_fork=false
+reconfigure=false
 fork_placement="upstream"
 dry_run=false
 print_path=false
@@ -135,6 +298,24 @@ while (($#)); do
     --oss-prefix=*)
       oss_prefix="${1#--oss-prefix=}"
       oss_mode=true
+      ;;
+    --contribute)
+      contribute=true
+      oss_mode=true
+      ;;
+    --fork-owner)
+      shift
+      [[ $# -gt 0 ]] || die "--fork-owner requires an owner"
+      fork_owner="$1"
+      ;;
+    --fork-owner=*)
+      fork_owner="${1#--fork-owner=}"
+      ;;
+    --no-fork)
+      no_fork=true
+      ;;
+    --reconfigure)
+      reconfigure=true
       ;;
     --fork-placement)
       shift
@@ -186,6 +367,16 @@ case "$fork_placement" in
   *) die "--fork-placement must be 'upstream' or 'fork'" ;;
 esac
 
+if [[ "$contribute" != true ]]; then
+  [[ -z "$fork_owner" ]] || die "--fork-owner can only be used with --contribute"
+  [[ "$no_fork" == false ]] || die "--no-fork can only be used with --contribute"
+  [[ "$reconfigure" == false ]] || die "--reconfigure can only be used with --contribute"
+fi
+
+if [[ "$contribute" == true && ${#clone_flags[@]} -gt 0 ]]; then
+  die "--no-upstream and --upstream-remote-name are not supported with --contribute"
+fi
+
 if ! command -v gh >/dev/null 2>&1; then
   die "GitHub CLI 'gh' is required"
 fi
@@ -195,15 +386,18 @@ if [[ "$oss_mode" == true ]]; then
   prefix="$(expand_tilde "${oss_prefix:-$(default_oss_prefix "$prefix")}")"
 fi
 
-repo_info_template='{{.nameWithOwner}}{{"\t"}}{{.isFork}}{{"\t"}}{{if .parent}}{{.parent.owner.login}}/{{.parent.name}}{{end}}{{"\n"}}'
-repo_info="$(gh repo view "$repo_arg" --json nameWithOwner,isFork,parent --template "$repo_info_template")"
+repo_info="$(repo_info "$repo_arg")"
 
 IFS=$'\t' read -r requested_repo is_fork parent_repo <<<"$repo_info"
 
 [[ -n "$requested_repo" ]] || die "could not resolve repository: $repo_arg"
 
 canonical_repo="$requested_repo"
-if [[ "$fork_placement" == "upstream" && "$is_fork" == "true" && -n "$parent_repo" ]]; then
+if [[ "$contribute" == true ]]; then
+  if [[ "$is_fork" == "true" && -n "$parent_repo" ]]; then
+    canonical_repo="$parent_repo"
+  fi
+elif [[ "$fork_placement" == "upstream" && "$is_fork" == "true" && -n "$parent_repo" ]]; then
   canonical_repo="$parent_repo"
 fi
 
@@ -215,6 +409,83 @@ destination="$prefix/$owner/$name"
 
 if [[ "$print_path" == true ]]; then
   printf '%s\n' "$destination"
+  exit 0
+fi
+
+if [[ "$contribute" == true ]]; then
+  fork_owner="$(resolve_fork_owner "$fork_owner")"
+  [[ -n "$fork_owner" ]] || die "could not determine fork owner"
+
+  if [[ "$owner" == "$fork_owner" ]]; then
+    die "upstream owner is the configured fork owner ($fork_owner); use normal clone/--oss instead"
+  fi
+
+  auth_login="$(gh api user --jq .login)"
+  fork_repo="$fork_owner/$name"
+  origin_url="https://github.com/$fork_repo.git"
+  ssh_alias="$(git_config_get smart-clone.sshAlias)"
+  git_name="$(git_config_get smart-clone.gitName)"
+  git_email="$(git_config_get smart-clone.gitEmail)"
+
+  if [[ -n "$ssh_alias" ]]; then
+    origin_url="git@$ssh_alias:$fork_repo.git"
+  fi
+
+  if [[ "$dry_run" == true ]]; then
+    printf 'mode: contribute\n'
+    printf 'upstream: %s\n' "$canonical_repo"
+    printf 'fork-owner: %s\n' "$fork_owner"
+    printf 'fork: %s\n' "$fork_repo"
+    printf 'destination: %s\n' "$destination"
+    if [[ "$no_fork" == true ]]; then
+      printf 'action: require existing fork %s\n' "$fork_repo"
+    else
+      printf 'action: ensure fork %s from %s\n' "$fork_repo" "$canonical_repo"
+    fi
+    if [[ "$reconfigure" == true ]]; then
+      printf 'action: reconfigure existing checkout\n'
+    else
+      printf 'action: clone %s to %s\n' "$fork_repo" "$destination"
+    fi
+    printf 'origin: %s\n' "$origin_url"
+    printf 'upstream-remote: https://github.com/%s.git\n' "$canonical_repo"
+    if [[ -n "$git_name" ]]; then
+      printf 'git user.name: %s\n' "$git_name"
+    fi
+    if [[ -n "$git_email" ]]; then
+      printf 'git user.email: %s\n' "$git_email"
+    fi
+    if [[ "$fork_owner" != "$auth_login" ]]; then
+      printf 'fork-target: organization %s via gh repo fork --org\n' "$fork_owner"
+    fi
+    exit 0
+  fi
+
+  if [[ -e "$destination" && "$reconfigure" != true ]]; then
+    existing_checkout_error "$destination"
+  fi
+  if [[ ! -e "$destination" && "$reconfigure" == true ]]; then
+    die "--reconfigure requires an existing checkout: $destination"
+  fi
+
+  ensure_fork "$canonical_repo" "$fork_owner" "$fork_repo" "$auth_login" "$no_fork"
+
+  if [[ "$reconfigure" == true ]]; then
+    configure_contribution_checkout "$destination" "$fork_repo" "$canonical_repo" "$origin_url" "$git_name" "$git_email"
+    printf 'Reconfigured %s for contribution to %s\n' "$destination" "$canonical_repo"
+    exit 0
+  fi
+
+  mkdir -p "$(dirname "$destination")"
+  cmd=(gh repo clone "$fork_repo" "$destination")
+  if ((${#git_clone_flags[@]})); then
+    cmd+=(-- "${git_clone_flags[@]}")
+  fi
+
+  "${cmd[@]}"
+  configure_contribution_checkout "$destination" "$fork_repo" "$canonical_repo" "$origin_url" "$git_name" "$git_email"
+  printf 'Cloned fork %s to %s\n' "$fork_repo" "$destination"
+  printf 'Configured upstream for %s\n' "$canonical_repo"
   exit 0
 fi
 
