@@ -1,6 +1,6 @@
 ---
 name: gh-smart-clone
-description: Use gh-smart-clone whenever an agent needs to clone, inspect, fork, or prepare GitHub repositories locally, including first-party checkouts, external OSS checkouts, and contribution forks that need safe paths, remotes, fork ownership, and local git identity.
+description: Set up GitHub clones, forks, remotes, and local identity.
 ---
 
 # gh-smart-clone
