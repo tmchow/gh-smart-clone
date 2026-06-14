@@ -1,5 +1,7 @@
 # gh-smart-clone
 
+[![test](https://github.com/tmchow/gh-smart-clone/actions/workflows/test.yml/badge.svg)](https://github.com/tmchow/gh-smart-clone/actions/workflows/test.yml)
+
 `gh-smart-clone` is a GitHub CLI extension that clones repositories into a
 predictable `owner/repo` directory layout, with special handling for contribution
 forks.
@@ -15,6 +17,11 @@ your fork remains `origin`, while `gh repo clone` can still configure the parent
 repository as `upstream`.
 
 ## Installation
+
+Requirements:
+
+- [GitHub CLI](https://cli.github.com/)
+- `git`
 
 ```sh
 gh extension install tmchow/gh-smart-clone
