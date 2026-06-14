@@ -10,6 +10,7 @@ forks.
 tmchow/foo                         -> ~/Code/tmchow/foo
 EveryInc/compound-engineering-plugin -> ~/Code/EveryInc/compound-engineering-plugin
 tmchow/orca, fork of stablyai/orca -> ~/Code/stablyai/orca
+tmchow/orca with --oss             -> ~/Code/oss/stablyai/orca
 ```
 
 For forks, the clone source stays as the repository you requested. That means
@@ -61,6 +62,44 @@ or with an environment variable:
 GH_SMART_CLONE_PREFIX=~/Developer gh smart-clone tmchow/orca
 ```
 
+### OSS / External Repos
+
+Use `--oss` when a checkout is external upstream work rather than first-party
+work:
+
+```sh
+gh smart-clone --oss anthropics/claude-code
+# -> ~/Code/oss/anthropics/claude-code
+
+gh smart-clone --oss tmchow/orca
+# -> ~/Code/oss/stablyai/orca
+```
+
+The `owner/repo` part still answers "what canonical project is this?" The
+`oss/` segment answers "is this external work?" Keeping those questions separate
+helps avoid confusing maintained or first-party repositories with third-party
+OSS inspection and contribution checkouts.
+
+The default OSS root is `<resolved-prefix>/oss`. Override it with `--oss-prefix`:
+
+```sh
+gh smart-clone --oss-prefix ~/src/external anthropics/claude-code
+```
+
+or with configuration:
+
+```sh
+git config --global smart-clone.ossPrefix ~/src/external
+```
+
+or with an environment variable:
+
+```sh
+GH_SMART_CLONE_OSS_PREFIX=~/src/external gh smart-clone --oss anthropics/claude-code
+```
+
+`--oss-prefix` implies `--oss`. `--external` is an alias for `--oss`.
+
 Preview the path without cloning:
 
 ```sh
@@ -108,6 +147,11 @@ origin -> github.com/tmchow/orca
 ```text
 -P, --prefix <path>             Clone root. Defaults to GH_SMART_CLONE_PREFIX,
                                 then git config smart-clone.prefix, then ~/Code.
+    --oss                       Use the OSS/external clone root.
+    --external                  Alias for --oss.
+    --oss-prefix <path>         OSS clone root. Implies --oss. Defaults to
+                                GH_SMART_CLONE_OSS_PREFIX, then git config
+                                smart-clone.ossPrefix, then <prefix>/oss.
     --fork-placement <policy>   Where forks are placed: upstream or fork.
                                 Defaults to upstream.
     --dry-run                   Print what would happen without cloning.

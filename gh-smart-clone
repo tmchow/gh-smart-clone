@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-VERSION="0.1.0"
+VERSION="0.2.0"
 
 usage() {
   cat <<'HELP_TEXT'
@@ -14,6 +14,8 @@ EXAMPLES
   gh smart-clone tmchow/foo
   gh smart-clone EveryInc/compound-engineering-plugin
   gh smart-clone tmchow/orca
+  gh smart-clone --oss tmchow/orca
+  gh smart-clone --oss-prefix ~/src/external anthropics/claude-code
   gh smart-clone --prefix ~/Developer tmchow/orca
   gh smart-clone --fork-placement fork tmchow/orca
   gh smart-clone --dry-run tmchow/orca
@@ -21,6 +23,11 @@ EXAMPLES
 FLAGS
   -P, --prefix <path>             Clone root. Defaults to GH_SMART_CLONE_PREFIX,
                                   then git config smart-clone.prefix, then ~/Code.
+      --oss                       Use the OSS/external clone root.
+      --external                  Alias for --oss.
+      --oss-prefix <path>         OSS clone root. Implies --oss. Defaults to
+                                  GH_SMART_CLONE_OSS_PREFIX, then git config
+                                  smart-clone.ossPrefix, then <prefix>/oss.
       --fork-placement <policy>   Where forks are placed: upstream or fork.
                                   Defaults to upstream.
       --dry-run                   Print what would happen without cloning.
@@ -70,7 +77,27 @@ default_prefix() {
   printf '%s/Code\n' "$HOME"
 }
 
+default_oss_prefix() {
+  local normal_prefix="$1"
+
+  if [[ -n "${GH_SMART_CLONE_OSS_PREFIX:-}" ]]; then
+    expand_tilde "$GH_SMART_CLONE_OSS_PREFIX"
+    return
+  fi
+
+  local configured
+  configured="$(git config --get smart-clone.ossPrefix 2>/dev/null || true)"
+  if [[ -n "$configured" ]]; then
+    expand_tilde "$configured"
+    return
+  fi
+
+  printf '%s/oss\n' "$normal_prefix"
+}
+
 prefix=""
+oss_prefix=""
+oss_mode=false
 fork_placement="upstream"
 dry_run=false
 print_path=false
@@ -95,6 +122,19 @@ while (($#)); do
       ;;
     --prefix=*)
       prefix="${1#--prefix=}"
+      ;;
+    --oss|--external)
+      oss_mode=true
+      ;;
+    --oss-prefix)
+      shift
+      [[ $# -gt 0 ]] || die "--oss-prefix requires a path"
+      oss_prefix="$1"
+      oss_mode=true
+      ;;
+    --oss-prefix=*)
+      oss_prefix="${1#--oss-prefix=}"
+      oss_mode=true
       ;;
     --fork-placement)
       shift
@@ -151,6 +191,9 @@ if ! command -v gh >/dev/null 2>&1; then
 fi
 
 prefix="$(expand_tilde "${prefix:-$(default_prefix)}")"
+if [[ "$oss_mode" == true ]]; then
+  prefix="$(expand_tilde "${oss_prefix:-$(default_oss_prefix "$prefix")}")"
+fi
 
 repo_info_template='{{.nameWithOwner}}{{"\t"}}{{.isFork}}{{"\t"}}{{if .parent}}{{.parent.owner.login}}/{{.parent.name}}{{end}}{{"\n"}}'
 repo_info="$(gh repo view "$repo_arg" --json nameWithOwner,isFork,parent --template "$repo_info_template")"
