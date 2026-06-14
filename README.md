@@ -41,6 +41,58 @@ cd gh-smart-clone
 gh extension install .
 ```
 
+## Agent Skill
+
+This repository also publishes an agent skill at
+`skills/gh-smart-clone/SKILL.md`. The skill teaches agents when to use normal
+clone mode, `--oss` inspection mode, and `--contribute` fork setup mode.
+
+Install the skill for the current project:
+
+```sh
+npx skills add tmchow/gh-smart-clone --skill gh-smart-clone
+```
+
+Install it globally:
+
+```sh
+npx skills add tmchow/gh-smart-clone --skill gh-smart-clone --global
+```
+
+Install it for a specific agent:
+
+```sh
+npx skills add tmchow/gh-smart-clone --skill gh-smart-clone --agent codex
+npx skills add tmchow/gh-smart-clone --skill gh-smart-clone --agent claude-code
+```
+
+List installed skills:
+
+```sh
+npx skills list
+npx skills list --global
+```
+
+Update the skill:
+
+```sh
+npx skills update gh-smart-clone
+npx skills update gh-smart-clone --global
+```
+
+Remove the skill:
+
+```sh
+npx skills remove gh-smart-clone
+npx skills remove gh-smart-clone --global
+```
+
+Use the skill once without installing it:
+
+```sh
+npx skills use tmchow/gh-smart-clone@gh-smart-clone
+```
+
 ## Usage
 
 ```sh
@@ -252,10 +304,6 @@ shellcheck gh-smart-clone test/run-tests.bash
 
 The tests use a fake `gh` binary, so they do not clone repositories or require
 network access.
-
-This repository also publishes an agent skill at
-`skills/gh-smart-clone/SKILL.md` for agents that need scenario guidance on when
-to use normal, OSS, and contribution modes.
 
 ## Prior Art
 
