@@ -1,0 +1,15 @@
+name: test
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run ShellCheck
+        run: shellcheck gh-smart-clone test/run-tests.bash
+      - name: Run tests
+        run: ./test/run-tests.bash
