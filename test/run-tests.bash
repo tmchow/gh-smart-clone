@@ -302,6 +302,98 @@ test_oss_prefix_flag_overrides_env_and_config() {
   teardown
 }
 
+test_group_inserts_segment_between_owner_and_repo() {
+  setup
+  local output
+  output="$(run_ext --group illo --print-path tmchow/foo)"
+  assert_eq "$tmpdir/home/Code/tmchow/illo/foo" "$output" "group inserts a folder between owner and repo"
+  teardown
+}
+
+test_group_short_flag_works() {
+  setup
+  local output
+  output="$(run_ext -g illo --print-path tmchow/foo)"
+  assert_eq "$tmpdir/home/Code/tmchow/illo/foo" "$output" "short -g flag groups the checkout"
+  teardown
+}
+
+test_group_composes_with_oss_mode() {
+  setup
+  local output
+  output="$(run_ext --oss --group vendor --print-path tmchow/foo)"
+  assert_eq "$tmpdir/home/Code/oss/tmchow/vendor/foo" "$output" "group composes with oss root"
+  teardown
+}
+
+test_group_composes_with_contribute_path() {
+  setup
+  local output log
+  output="$(run_ext --contribute --group vendor --print-path anthropics/claude-code)"
+  log="$(cat "$tmpdir/gh.log")"
+  assert_eq "$tmpdir/home/Code/oss/anthropics/vendor/claude-code" "$output" "group composes with contribute upstream path"
+  assert_not_contains "$log" "repo fork" "contribute group print-path does not create fork"
+  teardown
+}
+
+test_group_allows_nested_segments() {
+  setup
+  local output
+  output="$(run_ext --group a/b --print-path tmchow/foo)"
+  assert_eq "$tmpdir/home/Code/tmchow/a/b/foo" "$output" "group allows nested subfolders"
+  teardown
+}
+
+test_group_dry_run_reports_group() {
+  setup
+  local output
+  output="$(run_ext --dry-run --group illo tmchow/foo)"
+  assert_contains "$output" "group: illo" "dry run reports the group segment"
+  assert_contains "$output" "destination: $tmpdir/home/Code/tmchow/illo/foo" "dry run destination includes group"
+  teardown
+}
+
+test_group_contribute_dry_run_reports_group() {
+  setup
+  local output log
+  output="$(run_ext --contribute --dry-run --group vendor anthropics/claude-code)"
+  log="$(cat "$tmpdir/gh.log")"
+  assert_contains "$output" "group: vendor" "contribute dry run reports the group segment"
+  assert_contains "$output" "destination: $tmpdir/home/Code/oss/anthropics/vendor/claude-code" "contribute dry run destination includes group"
+  assert_not_contains "$log" "repo fork" "contribute dry run with group does not create fork"
+  teardown
+}
+
+test_group_rejects_parent_traversal() {
+  setup
+  local status stderr
+  status="$(run_ext_with_status --group ../escape --print-path tmchow/foo)"
+  stderr="$(cat "$tmpdir/stderr")"
+  assert_eq "1" "$status" "group with .. is rejected"
+  assert_contains "$stderr" "must not contain a '..' path segment" "group traversal error is explicit"
+  teardown
+}
+
+test_group_rejects_absolute_path() {
+  setup
+  local status stderr
+  status="$(run_ext_with_status --group /abs --print-path tmchow/foo)"
+  stderr="$(cat "$tmpdir/stderr")"
+  assert_eq "1" "$status" "absolute group path is rejected"
+  assert_contains "$stderr" "must be a relative path" "group absolute-path error is explicit"
+  teardown
+}
+
+test_group_rejects_empty_value() {
+  setup
+  local status stderr
+  status="$(run_ext_with_status --group= --print-path tmchow/foo)"
+  stderr="$(cat "$tmpdir/stderr")"
+  assert_eq "1" "$status" "empty group value is rejected"
+  assert_contains "$stderr" "requires a non-empty value" "empty group error is explicit"
+  teardown
+}
+
 test_fork_in_oss_mode_defaults_to_upstream_path() {
   setup
   local output
@@ -522,6 +614,16 @@ tests=(
   test_oss_prefix_git_config_overrides_default
   test_oss_prefix_flag_overrides_env_and_config
   test_fork_in_oss_mode_defaults_to_upstream_path
+  test_group_inserts_segment_between_owner_and_repo
+  test_group_short_flag_works
+  test_group_composes_with_oss_mode
+  test_group_composes_with_contribute_path
+  test_group_allows_nested_segments
+  test_group_dry_run_reports_group
+  test_group_contribute_dry_run_reports_group
+  test_group_rejects_parent_traversal
+  test_group_rejects_absolute_path
+  test_group_rejects_empty_value
   test_dry_run_does_not_clone
   test_clone_forwards_requested_fork_and_uses_upstream_destination
   test_clone_flags_are_forwarded

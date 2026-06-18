@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.4.0
+
+- Add `--group`/`-g` to place a cosmetic organizational folder between owner and
+  repo, so related repositories can be collected under a shared directory.
+- Keep grouping purely about on-disk layout: it composes with normal, `--oss`,
+  and `--contribute` modes and never changes remotes, fork ownership, or local
+  git identity.
+- Validate group paths, rejecting absolute paths, `..`, and empty segments.
+- Expand tests and docs for grouping across modes and refusal cases.
+
 ## 0.3.0
 
 - Add explicit contribution mode with `--contribute`.
