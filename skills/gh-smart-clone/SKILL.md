@@ -1,6 +1,6 @@
 ---
 name: gh-smart-clone
-description: Set up GitHub clones, forks, remotes, and local identity.
+description: Set up GitHub clones, forks, remotes, local identity, and grouping related repos under a shared folder.
 ---
 
 # gh-smart-clone
@@ -81,6 +81,26 @@ Use `--contribute --reconfigure` only when the user wants the existing checkout 
 gh smart-clone --contribute --reconfigure OWNER/REPO
 ```
 
+### Grouping Related Repos
+
+Use `--group <name>` when the user wants several related repositories collected under one organizational folder instead of scattered directly under the owner. The group is a cosmetic directory segment placed between owner and repo; it does not change remotes, fork ownership, or local git identity.
+
+```sh
+gh smart-clone --group illo tmchow/illo-website
+gh smart-clone --group illo tmchow/illo-skill
+gh smart-clone --group illo tmchow/illo-characters
+```
+
+Result:
+
+```text
+~/Code/tmchow/illo/illo-website
+~/Code/tmchow/illo/illo-skill
+~/Code/tmchow/illo/illo-characters
+```
+
+The group folder is plain organization, not a checkout: it is never itself a git repository and never gets remotes. Grouping is explicit because it cannot be safely inferred. Do not assume a shared name prefix (`illo-*`) implies a group; only group when the user asks to. `--group` composes with every mode, so `--oss --group vendor` and `--contribute --group vendor` place the grouped folder under the correct root and upstream path.
+
 ## Operating Principles
 
 - Prefer `gh smart-clone` for GitHub clone and fork setup whenever it is installed.
@@ -88,6 +108,7 @@ gh smart-clone --contribute --reconfigure OWNER/REPO
 - Keep work relationship in the root. Main workspace means first-party/maintained work; `oss/` means external work.
 - Treat fork creation as a side effect. Only `--contribute` may create or reuse a fork for contribution setup.
 - Use `--oss` for inspection. Do not create forks just because a repo is external.
+- Treat `--group` as cosmetic. It only organizes checkouts on disk; it never changes identity, remotes, or authority, and it is used only when the user asks to group repos.
 - Verify remotes and local git identity before editing, committing, or pushing in contribution checkouts.
 - Fail or ask before changing an existing checkout unless `--reconfigure` is explicit.
 

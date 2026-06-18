@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-VERSION="0.3.0"
+VERSION="0.4.0"
 
 usage() {
   cat <<'HELP_TEXT'
@@ -15,6 +15,7 @@ EXAMPLES
   gh smart-clone EveryInc/compound-engineering-plugin
   gh smart-clone tmchow/orca
   gh smart-clone --oss tmchow/orca
+  gh smart-clone --group illo tmchow/illo-website
   gh smart-clone --contribute stablyai/orca
   gh smart-clone --contribute --reconfigure stablyai/orca
   gh smart-clone --oss-prefix ~/src/external anthropics/claude-code
@@ -25,6 +26,10 @@ EXAMPLES
 FLAGS
   -P, --prefix <path>             Clone root. Defaults to GH_SMART_CLONE_PREFIX,
                                   then git config smart-clone.prefix, then ~/Code.
+  -g, --group <path>              Organizational subfolder placed between owner
+                                  and repo. Cosmetic only: it groups related
+                                  checkouts on disk and never changes remotes,
+                                  fork ownership, or local git identity.
       --oss                       Use the OSS/external clone root.
       --external                  Alias for --oss.
       --oss-prefix <path>         OSS clone root. Implies --oss. Defaults to
@@ -58,6 +63,10 @@ NOTES
 
   --contribute is intentionally explicit because fork creation mutates GitHub
   state. Normal clone mode and --oss never create forks.
+
+  --group only inserts a directory segment. It composes with every mode, so
+  --group illo tmchow/illo-website lands at <prefix>/tmchow/illo/illo-website,
+  and --oss --group illo ... lands under the oss root the same way.
 HELP_TEXT
 }
 
@@ -71,6 +80,19 @@ expand_tilde() {
     \~) printf '%s\n' "$HOME" ;;
     \~/*) printf '%s/%s\n' "$HOME" "${1#~/}" ;;
     *) printf '%s\n' "$1" ;;
+  esac
+}
+
+validate_group() {
+  local group="$1"
+  [[ -n "$group" ]] || die "--group requires a non-empty value"
+  case "$group" in
+    /*) die "--group must be a relative path, not absolute: $group" ;;
+  esac
+  case "/$group/" in
+    *//*) die "--group must not contain empty path segments: $group" ;;
+    */../*) die "--group must not contain a '..' path segment: $group" ;;
+    */./*) die "--group must not contain a '.' path segment: $group" ;;
   esac
 }
 
@@ -255,6 +277,8 @@ ensure_fork() {
 }
 
 prefix=""
+group=""
+group_provided=false
 oss_prefix=""
 oss_mode=false
 contribute=false
@@ -285,6 +309,16 @@ while (($#)); do
       ;;
     --prefix=*)
       prefix="${1#--prefix=}"
+      ;;
+    -g|--group)
+      shift
+      [[ $# -gt 0 ]] || die "--group requires a path"
+      group="$1"
+      group_provided=true
+      ;;
+    --group=*)
+      group="${1#--group=}"
+      group_provided=true
       ;;
     --oss|--external)
       oss_mode=true
@@ -362,6 +396,8 @@ done
 
 [[ -n "$repo_arg" ]] || die "missing repository argument"
 
+[[ "$group_provided" == false ]] || validate_group "$group"
+
 case "$fork_placement" in
   upstream|fork) ;;
   *) die "--fork-placement must be 'upstream' or 'fork'" ;;
@@ -405,7 +441,11 @@ owner="${canonical_repo%%/*}"
 name="${canonical_repo#*/}"
 [[ "$owner" != "$canonical_repo" && -n "$name" ]] || die "unexpected repository name: $canonical_repo"
 
-destination="$prefix/$owner/$name"
+if [[ -n "$group" ]]; then
+  destination="$prefix/$owner/$group/$name"
+else
+  destination="$prefix/$owner/$name"
+fi
 
 if [[ "$print_path" == true ]]; then
   printf '%s\n' "$destination"
@@ -436,6 +476,9 @@ if [[ "$contribute" == true ]]; then
     printf 'upstream: %s\n' "$canonical_repo"
     printf 'fork-owner: %s\n' "$fork_owner"
     printf 'fork: %s\n' "$fork_repo"
+    if [[ -n "$group" ]]; then
+      printf 'group: %s\n' "$group"
+    fi
     printf 'destination: %s\n' "$destination"
     if [[ "$no_fork" == true ]]; then
       printf 'action: require existing fork %s\n' "$fork_repo"
@@ -492,6 +535,9 @@ fi
 if [[ "$dry_run" == true ]]; then
   printf 'repository: %s\n' "$requested_repo"
   printf 'canonical:  %s\n' "$canonical_repo"
+  if [[ -n "$group" ]]; then
+    printf 'group: %s\n' "$group"
+  fi
   printf 'destination: %s\n' "$destination"
   printf 'command: gh repo clone %q %q' "$requested_repo" "$destination"
   if ((${#clone_flags[@]})); then

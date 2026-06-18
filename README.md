@@ -12,6 +12,7 @@ EveryInc/compound-engineering-plugin -> ~/Code/EveryInc/compound-engineering-plu
 tmchow/orca, fork of stablyai/orca -> ~/Code/stablyai/orca
 tmchow/orca with --oss             -> ~/Code/oss/stablyai/orca
 --contribute anthropics/claude-code -> ~/Code/oss/anthropics/claude-code
+--group illo tmchow/illo-website   -> ~/Code/tmchow/illo/illo-website
 ```
 
 For forks, the clone source stays as the repository you requested. That means
@@ -117,6 +118,37 @@ or with an environment variable:
 
 ```sh
 GH_SMART_CLONE_PREFIX=~/Developer gh smart-clone tmchow/orca
+```
+
+### Grouping Related Repos
+
+Sometimes several repositories belong together even though GitHub stores them
+flat under one owner. Use `--group` to collect them under a shared
+organizational folder:
+
+```sh
+gh smart-clone --group illo tmchow/illo-website
+gh smart-clone --group illo tmchow/illo-skill
+gh smart-clone --group illo tmchow/illo-characters
+# -> ~/Code/tmchow/illo/illo-website
+# -> ~/Code/tmchow/illo/illo-skill
+# -> ~/Code/tmchow/illo/illo-characters
+```
+
+The group is a cosmetic directory segment placed between owner and repo. The
+group folder is plain organization: it is never itself a git repository, and
+grouping never changes `origin`, `upstream`, fork ownership, or local git
+identity. Grouping is always explicit; a shared name prefix like `illo-` does
+not imply a group on its own.
+
+`--group` composes with every mode and accepts nested segments:
+
+```sh
+gh smart-clone --oss --group vendor anthropics/claude-code
+# -> ~/Code/oss/anthropics/vendor/claude-code
+
+gh smart-clone --group clients/acme acme/widgets
+# -> ~/Code/acme/clients/acme/widgets
 ```
 
 ### OSS / External Repos
@@ -265,6 +297,9 @@ origin -> github.com/tmchow/orca
 ```text
 -P, --prefix <path>             Clone root. Defaults to GH_SMART_CLONE_PREFIX,
                                 then git config smart-clone.prefix, then ~/Code.
+-g, --group <path>              Organizational subfolder placed between owner
+                                and repo. Cosmetic only: never changes remotes,
+                                fork ownership, or local git identity.
     --oss                       Use the OSS/external clone root.
     --external                  Alias for --oss.
     --oss-prefix <path>         OSS clone root. Implies --oss. Defaults to
